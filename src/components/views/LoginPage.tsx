@@ -24,31 +24,30 @@ export default function LoginPage() {
     }
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/callback/credentials', {
+      // Use our custom login endpoint instead of NextAuth directly
+      const res = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ email, password }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
       });
 
+      const data = await res.json();
+
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Login gagal');
       }
 
-      // Fetch session to get teacher info
-      const sessionRes = await fetch('/api/auth/session');
-      const sessionData = await sessionRes.json();
-
-      if (sessionData?.user) {
+      // Set teacher info from response
+      if (data.teacher) {
         setTeacher({
-          id: sessionData.user.id,
-          name: sessionData.user.name,
-          email: sessionData.user.email,
+          id: data.teacher.id,
+          name: data.teacher.name,
+          email: data.teacher.email,
         });
         toast.success('Berhasil masuk!');
         navigate('dashboard');
       } else {
-        throw new Error('Gagal mengambil data sesi');
+        throw new Error('Data guru tidak ditemukan');
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Login gagal. Cek email dan password.');

@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { toast } from 'sonner';
 
 export default function RegisterPage() {
-  const { navigate } = useAppStore();
+  const { navigate, setTeacher } = useAppStore();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,47 +30,39 @@ export default function RegisterPage() {
     }
     setLoading(true);
     try {
-      // Register
-      const res = await fetch('/api/teachers', {
+      // Step 1: Register
+      const regRes = await fetch('/api/teachers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password, school }),
       });
 
-      const data = await res.json();
+      const regData = await regRes.json();
 
-      if (!res.ok) {
-        throw new Error(data.error || 'Pendaftaran gagal');
+      if (!regRes.ok) {
+        throw new Error(regData.error || 'Pendaftaran gagal');
       }
 
-      // Auto-login after registration
-      const loginRes = await fetch('/api/auth/callback/credentials', {
+      // Step 2: Auto-login using our custom login endpoint
+      const loginRes = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ email, password }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
       });
 
-      if (!loginRes.ok) {
-        toast.success('Pendaftaran berhasil! Silakan masuk.');
-        navigate('login');
-        return;
-      }
+      const loginData = await loginRes.json();
 
-      // Fetch session
-      const sessionRes = await fetch('/api/auth/session');
-      const sessionData = await sessionRes.json();
-
-      if (sessionData?.user) {
-        const { setTeacher } = useAppStore.getState();
+      if (loginRes.ok && loginData.teacher) {
         setTeacher({
-          id: sessionData.user.id,
-          name: sessionData.user.name,
-          email: sessionData.user.email,
+          id: loginData.teacher.id,
+          name: loginData.teacher.name,
+          email: loginData.teacher.email,
         });
-        toast.success('Pendaftaran berhasil!');
+        toast.success('Pendaftaran berhasil! Selamat datang!');
         navigate('dashboard');
       } else {
-        toast.success('Pendaftaran berhasil! Silakan masuk.');
+        // Registration succeeded but auto-login failed, redirect to login page
+        toast.success('Pendaftaran berhasil! Silakan masuk dengan akun Anda.');
         navigate('login');
       }
     } catch (error) {

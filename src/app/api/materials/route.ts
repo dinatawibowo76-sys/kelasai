@@ -6,6 +6,28 @@ import mammoth from 'mammoth';
 
 const UPLOAD_DIR = path.join(process.cwd(), 'upload');
 
+// Check if we're running on Vercel (read-only filesystem)
+const IS_VERCEL = !!process.env.VERCEL;
+
+async function saveFileToDisk(uniqueFileName: string, buffer: Buffer): Promise<string | null> {
+  if (IS_VERCEL) {
+    // On Vercel, filesystem is read-only — skip file write
+    // The extracted text stored in DB is what matters for AI features
+    console.log('Running on Vercel — skipping file write to read-only filesystem');
+    return null;
+  }
+
+  try {
+    await mkdir(UPLOAD_DIR, { recursive: true });
+    const filePath = path.join(UPLOAD_DIR, uniqueFileName);
+    await writeFile(filePath, buffer);
+    return `/upload/${uniqueFileName}`;
+  } catch (err) {
+    console.warn('Failed to write file to disk (may be read-only filesystem):', err);
+    return null;
+  }
+}
+
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   try {
     // Dynamic import to avoid build-time ESM issues
@@ -79,18 +101,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Ensure upload directory exists
-    await mkdir(UPLOAD_DIR, { recursive: true });
-
     // Generate unique filename
     const fileExtension = path.extname(file.name);
     const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${fileExtension}`;
-    const filePath = path.join(UPLOAD_DIR, uniqueFileName);
 
-    // Save file to disk
+    // Read file into buffer (needed for text extraction regardless of storage)
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    await writeFile(filePath, buffer);
+
+    // Save file to disk (skipped on Vercel — read-only filesystem)
+    const fileUrl = await saveFileToDisk(uniqueFileName, buffer);
 
     // Determine file type
     const fileType = fileExtension.replace('.', '').toLowerCase();
@@ -126,7 +146,7 @@ export async function POST(request: NextRequest) {
         data: {
           sessionId,
           fileName: file.name,
-          fileUrl: `/upload/${uniqueFileName}`,
+          fileUrl: fileUrl || `upload/${uniqueFileName}`,
           fileType,
           extractedText: null,
         },
@@ -147,7 +167,7 @@ export async function POST(request: NextRequest) {
       data: {
         sessionId,
         fileName: file.name,
-        fileUrl: `/upload/${uniqueFileName}`,
+        fileUrl: fileUrl || `upload/${uniqueFileName}`,
         fileType,
         extractedText,
       },

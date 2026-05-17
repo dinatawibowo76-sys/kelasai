@@ -1,0 +1,6 @@
+{
+  "buildCommand": "prisma generate --schema=prisma/schema.prod.prisma && next build",
+  "installCommand": "bun install",
+  "framework": "nextjs",
+  "regions": ["sin1"]
+}

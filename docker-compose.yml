@@ -1,5 +1,17 @@
+# ============================================
 # KelasAI - AI Tutor Platform for Indonesian Schools
 # Docker Compose for production deployment
+# ============================================
+#
+# Usage:
+#   docker compose up -d          # Start with SQLite (default)
+#   docker compose up -d --build  # Rebuild after code changes
+#   docker compose logs -f app    # Follow app logs
+#   docker compose down           # Stop all services
+#
+# Configuration:
+#   Copy .env.example to .env and fill in your values before starting.
+#
 
 services:
   app:
@@ -13,17 +25,20 @@ services:
     volumes:
       - kelasai-db:/app/db
       - kelasai-uploads:/app/upload
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL=file:/app/db/custom.db
+      # Override or provide defaults — .env file values take precedence
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-file:/app/db/custom.db}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-change-this-secret-in-production}
       - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
-      - NODE_ENV=production
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
 
   caddy:
     image: caddy:2-alpine
@@ -40,8 +55,35 @@ services:
       app:
         condition: service_healthy
 
+  # ---- PostgreSQL (alternative to SQLite) ----
+  # Uncomment the block below AND update DATABASE_URL in .env to use PostgreSQL:
+  #   DATABASE_URL=postgresql://kelasai:kelasai_password@postgres:5432/kelasai?schema=public
+  #
+  # Also update the prisma/schema.prisma datasource:
+  #   datasource db {
+  #     provider = "postgresql"
+  #     url      = env("DATABASE_URL")
+  #   }
+  #
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: kelasai-postgres
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER: kelasai
+  #     POSTGRES_PASSWORD: kelasai_password
+  #     POSTGRES_DB: kelasai
+  #   volumes:
+  #     - kelasai-pgdata:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U kelasai"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
 volumes:
   kelasai-db:
   kelasai-uploads:
   caddy-data:
   caddy-config:
+  # kelasai-pgdata:  # Uncomment when using PostgreSQL

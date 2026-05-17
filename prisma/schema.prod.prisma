@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Teacher {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  school    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  classes Class[]
+}
+
+model Class {
+  id             String   @id @default(cuid())
+  teacherId      String
+  className      String
+  educationLevel String   // SD, SMP, SMA, SMK
+  classCode      String   @unique
+  description    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  teacher  Teacher           @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  sessions LearningSession[]
+}
+
+model LearningSession {
+  id          String   @id @default(cuid())
+  classId     String
+  title       String
+  sessionCode String   @unique
+  description String?
+  status      String   @default("active") // active, closed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  class           Class            @relation(fields: [classId], references: [id], onDelete: Cascade)
+  materials       Material[]
+  quizzes         Quiz[]
+  studentSessions StudentSession[]
+}
+
+model Material {
+  id            String   @id @default(cuid())
+  sessionId     String
+  fileName      String
+  fileUrl       String
+  fileType      String   // pdf, pptx, docx, txt
+  extractedText String?
+  createdAt     DateTime @default(now())
+
+  session LearningSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  chunks  MaterialChunk[]
+}
+
+model MaterialChunk {
+  id         String @id @default(cuid())
+  materialId String
+  chunkText  String
+  chunkIndex Int
+
+  material Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+}
+
+model StudentSession {
+  id            String   @id @default(cuid())
+  sessionId     String
+  studentName   String
+  studentNumber String?
+  joinedAt      DateTime @default(now())
+  lastActiveAt  DateTime @default(now())
+
+  session      LearningSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  chatMessages ChatMessage[]
+  quizAttempts QuizAttempt[]
+}
+
+model ChatMessage {
+  id              String   @id @default(cuid())
+  studentSessionId String
+  message         String
+  role            String   // student, ai
+  createdAt       DateTime @default(now())
+
+  studentSession StudentSession @relation(fields: [studentSessionId], references: [id], onDelete: Cascade)
+}
+
+model Quiz {
+  id          String   @id @default(cuid())
+  sessionId   String
+  title       String
+  difficulty  String   @default("medium") // easy, medium, hard
+  questionType String  @default("multiple_choice") // multiple_choice, essay, true_false, mixed
+  createdAt   DateTime @default(now())
+
+  session   LearningSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  questions QuizQuestion[]
+  attempts  QuizAttempt[]
+}
+
+model QuizQuestion {
+  id          String @id @default(cuid())
+  quizId      String
+  question    String
+  options     String? // JSON string for options ["A", "B", "C", "D"]
+  answer      String
+  explanation String?
+  questionType String @default("multiple_choice") // multiple_choice, essay, true_false
+  points      Int    @default(10)
+
+  quiz    Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers QuizAnswer[]
+}
+
+model QuizAttempt {
+  id              String   @id @default(cuid())
+  studentSessionId String
+  quizId          String
+  score           Int      @default(0)
+  totalPoints     Int      @default(0)
+  submittedAt     DateTime @default(now())
+
+  studentSession StudentSession @relation(fields: [studentSessionId], references: [id], onDelete: Cascade)
+  quiz           Quiz          @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  answers        QuizAnswer[]
+}
+
+model QuizAnswer {
+  id            String @id @default(cuid())
+  attemptId     String
+  questionId    String
+  studentAnswer String
+  isCorrect     Boolean @default(false)
+
+  attempt QuizAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+}

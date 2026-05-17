@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { ArrowLeft, Upload, FileText, Loader2, Check, Type, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Upload, FileText, Loader2, Check, Type, AlertCircle, Sparkles } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import TeacherLayout from '@/components/shared/TeacherLayout';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ export default function UploadMaterialPage() {
   const [loading, setLoading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [chunkCount, setChunkCount] = useState(0);
+  const [hasWarning, setHasWarning] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -29,6 +30,7 @@ export default function UploadMaterialPage() {
       return;
     }
     setFile(selectedFile);
+    setHasWarning(false);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -50,7 +52,6 @@ export default function UploadMaterialPage() {
 
     setLoading(true);
     try {
-      // Step 1: Create the file to upload
       let fileToUpload: File;
       const textToProcess = textContent.trim();
 
@@ -62,7 +63,7 @@ export default function UploadMaterialPage() {
         fileToUpload = new File([blob], 'materi-manual.txt', { type: 'text/plain' });
       }
 
-      // Step 2: Upload with text included for processing
+      // Upload with text included for processing
       const formData = new FormData();
       formData.append('file', fileToUpload);
       formData.append('sessionId', selectedSessionId);
@@ -81,14 +82,20 @@ export default function UploadMaterialPage() {
 
       const chunks = data.chunkCount || 0;
       setChunkCount(chunks);
-      setUploadSuccess(true);
+      setHasWarning(!!data.warning);
 
       if (chunks > 0) {
         toast.success(`Materi berhasil diunggah & diproses! ${chunks} bagian terbentuk.`);
+        setUploadSuccess(true);
+      } else if (data.warning) {
+        toast.error(data.warning);
+        setUploadSuccess(true);
       } else if (textToProcess) {
         toast.success('Materi berhasil diunggah!');
+        setUploadSuccess(true);
       } else {
         toast.success('File berhasil diunggah! Tambahkan teks materi agar bisa diproses oleh AI.');
+        setUploadSuccess(true);
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Gagal mengunggah materi');
@@ -120,27 +127,43 @@ export default function UploadMaterialPage() {
         <CardContent>
           {uploadSuccess ? (
             <div className="text-center py-6">
-              <div className="w-16 h-16 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-4">
-                <Check className="w-8 h-8 text-green-600" />
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
+                chunkCount > 0 ? 'bg-green-50' : 'bg-amber-50'
+              }`}>
+                {chunkCount > 0 ? (
+                  <Check className="w-8 h-8 text-green-600" />
+                ) : (
+                  <AlertCircle className="w-8 h-8 text-amber-600" />
+                )}
               </div>
-              <h3 className="font-semibold text-gray-800 mb-1">Materi Berhasil Diunggah!</h3>
+              <h3 className="font-semibold text-gray-800 mb-1">
+                {chunkCount > 0 ? 'Materi Berhasil Diunggah!' : 'File Terunggah, Tapi Perlu Teks'}
+              </h3>
               {chunkCount > 0 ? (
                 <p className="text-sm text-gray-500 mb-4">
                   Materi sudah diproses menjadi {chunkCount} bagian dan siap digunakan untuk AI Chat & Quiz
                 </p>
               ) : (
                 <p className="text-sm text-amber-600 mb-4">
-                  File terupload tapi belum ada teks yang diproses. AI Chat & Quiz membutuhkan teks materi.
+                  File terupload tapi teks tidak bisa diekstrak otomatis. Silakan upload ulang dengan mengetik/menempel teks materi di kolom bawah.
                 </p>
               )}
               <div className="flex gap-2 justify-center">
                 <Button
                   variant="outline"
                   className="border-gray-200"
-                  onClick={() => { setUploadSuccess(false); setTextContent(''); setFile(null); }}
+                  onClick={() => { setUploadSuccess(false); setTextContent(''); setFile(null); setHasWarning(false); }}
                 >
                   Upload Lagi
                 </Button>
+                {chunkCount > 0 && (
+                  <Button
+                    className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white"
+                    onClick={() => navigate('generate-quiz')}
+                  >
+                    <Sparkles className="w-4 h-4 mr-1" /> Buat Quiz
+                  </Button>
+                )}
                 <Button
                   className="bg-blue-600 hover:bg-blue-700"
                   onClick={() => navigate('session-detail')}
@@ -188,16 +211,17 @@ export default function UploadMaterialPage() {
                     <Upload className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                     <p className="text-sm text-gray-500">Seret file ke sini atau klik untuk memilih</p>
                     <p className="text-xs text-gray-400 mt-1">PDF, DOCX, PPTX, TXT, MD</p>
+                    <p className="text-xs text-blue-500 mt-1">PDF & DOCX otomatis diekstrak teksnya</p>
                   </>
                 )}
               </div>
 
-              {/* Info for non-text files */}
-              {isNonTextFile && (
+              {/* Info for PPTX files (can't auto-extract) */}
+              {file && file.name.split('.').pop()?.toLowerCase() === 'pptx' && (
                 <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
                   <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                   <p className="text-xs text-amber-700">
-                    File {file.name.split('.').pop()?.toUpperCase()} tidak bisa dibaca otomatis. 
+                    File PPTX belum bisa dibaca otomatis. 
                     Silakan <strong>salin/tempel teks materi</strong> di kolom bawah agar AI bisa memproses.
                   </p>
                 </div>
@@ -215,7 +239,10 @@ export default function UploadMaterialPage() {
                 <Label className="flex items-center gap-1">
                   <Type className="w-4 h-4" />
                   Teks Materi
-                  <span className="text-xs text-red-500 font-normal">*wajib untuk AI Chat & Quiz</span>
+                  {!file && <span className="text-xs text-red-500 font-normal">*wajib jika tidak upload file</span>}
+                  {file && (file.name.split('.').pop()?.toLowerCase() === 'pdf' || file.name.split('.').pop()?.toLowerCase() === 'docx') && (
+                    <span className="text-xs text-blue-500 font-normal">(otomatis dari file, atau isi manual untuk override)</span>
+                  )}
                 </Label>
                 <Textarea
                   placeholder="Ketik atau tempelkan teks materi di sini... Ini akan diproses oleh AI untuk chat dan quiz. Contoh: Persamaan kuadrat adalah persamaan polinomial berderajat dua..."

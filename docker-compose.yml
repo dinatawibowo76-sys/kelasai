@@ -1,0 +1,47 @@
+# KelasAI - AI Tutor Platform for Indonesian Schools
+# Docker Compose for production deployment
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kelasai-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - kelasai-db:/app/db
+      - kelasai-uploads:/app/upload
+    environment:
+      - DATABASE_URL=file:/app/db/custom.db
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-change-this-secret-in-production}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: kelasai-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  kelasai-db:
+  kelasai-uploads:
+  caddy-data:
+  caddy-config:

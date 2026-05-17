@@ -23,3 +23,40 @@ Stage Summary:
 - Mobile-first design optimized for low-end Android phones
 - All text in Bahasa Indonesia
 - SPA architecture with Zustand-based navigation
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix login bug - custom login endpoint
+
+Work Log:
+- Diagnosed NextAuth internal callback returning non-JSON responses
+- Created custom /api/auth/login endpoint with bcrypt password verification
+- Updated LoginView and RegisterView to use custom endpoint
+- Created demo account (demo@sekolah.id / demo123)
+- Verified login flow works correctly
+
+Stage Summary:
+- Login/register now works via custom API endpoint
+- Demo account created for testing
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Fix quiz generation bug + setup deployment
+
+Work Log:
+- Investigated quiz generation failure: PDF files uploaded but extractedText was null
+- Installed pdf2json and mammoth for PDF/DOCX text extraction
+- Updated /api/materials/route.ts with auto text extraction for PDF (pdf2json) and DOCX (mammoth)
+- Updated /api/quiz/route.ts with better error messages and chunk fallback
+- Added material ID to quiz route's session query for chunk lookup
+- Updated UploadMaterialPage with better UX (warning for PPTX, auto-extraction notice, direct quiz button)
+- Truncated material text to 6000 chars max for quiz generation (prevent token overflow)
+- Build succeeded
+- Created deployment files: Dockerfile, docker-compose.yml, Caddyfile.prod, deploy.sh
+
+Stage Summary:
+- PDF/DOCX text extraction now works automatically on upload
+- Quiz generation error messages are more descriptive
+- Deployment configuration ready for both Docker and bare-metal VPS

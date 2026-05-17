@@ -21,6 +21,7 @@ export async function POST(request: NextRequest) {
         class: { select: { teacherId: true } },
         materials: {
           select: {
+            id: true,
             extractedText: true,
             fileName: true,
           },
@@ -42,15 +43,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Gather material text
-    const materialTexts = session.materials
+    // Gather material text - check both extractedText and chunks
+    let materialTexts = session.materials
       .filter((m) => m.extractedText)
       .map((m) => m.extractedText)
       .join('\n\n');
 
+    // If no extractedText on materials, try to get text from chunks
     if (!materialTexts) {
+      const materialIds = session.materials.map((m) => m.id).filter(Boolean);
+      if (materialIds.length > 0) {
+        const chunks = await db.materialChunk.findMany({
+          where: { materialId: { in: materialIds } },
+          orderBy: { chunkIndex: 'asc' },
+        });
+        if (chunks.length > 0) {
+          materialTexts = chunks.map((c) => c.chunkText).join('\n\n');
+        }
+      }
+    }
+
+    if (!materialTexts) {
+      const totalMaterials = session.materials.length;
+      const materialsWithoutText = session.materials.filter((m) => !m.extractedText).length;
+      const errorMsg = totalMaterials === 0
+        ? 'Belum ada materi di sesi ini. Upload materi terlebih dahulu sebelum membuat quiz.'
+        : `Ada ${totalMaterials} materi terupload, tapi ${materialsWithoutText} di antaranya belum punya teks yang bisa diproses. Silakan upload ulang dengan menambahkan teks materi, atau upload file PDF/TXT yang bisa dibaca otomatis.`;
+
       return NextResponse.json(
-        { error: 'Belum ada materi yang diproses untuk sesi ini. Silakan upload dan proses materi terlebih dahulu.' },
+        { error: errorMsg },
         { status: 400 }
       );
     }
@@ -58,6 +79,12 @@ export async function POST(request: NextRequest) {
     const count = questionCount || 5;
     const diff = difficulty || 'medium';
     const qType = questionType || 'multiple_choice';
+
+    // Limit material text to avoid token overflow (take first 6000 chars)
+    const maxMaterialLength = 6000;
+    const truncatedMaterial = materialTexts.length > maxMaterialLength
+      ? materialTexts.substring(0, maxMaterialLength) + '\n...(materi dipotong karena terlalu panjang)'
+      : materialTexts;
 
     const quizPrompt = `Buat soal quiz berdasarkan materi berikut. Format JSON array:
 [{
@@ -69,7 +96,7 @@ export async function POST(request: NextRequest) {
   "points": 10
 }]
 
-Materi: ${materialTexts}
+Materi: ${truncatedMaterial}
 Jumlah soal: ${count}
 Tingkat kesulitan: ${diff}
 Tipe soal: ${qType}

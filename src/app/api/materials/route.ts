@@ -11,6 +11,7 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file') as File | null;
     const sessionId = formData.get('sessionId') as string | null;
     const teacherId = formData.get('teacherId') as string | null;
+    const manualText = formData.get('text') as string | null;
 
     if (!file || !sessionId || !teacherId) {
       return NextResponse.json(
@@ -55,25 +56,64 @@ export async function POST(request: NextRequest) {
     // Determine file type
     const fileType = fileExtension.replace('.', '').toLowerCase();
 
-    // Create material record
+    // Extract text: use manual text if provided, otherwise try to read file content
+    let extractedText: string | null = manualText || null;
+
+    // For text files, read content directly
+    if (!extractedText && (fileType === 'txt' || fileType === 'md')) {
+      extractedText = new TextDecoder().decode(buffer);
+    }
+
+    // Create material record with extracted text
     const material = await db.material.create({
       data: {
         sessionId,
         fileName: file.name,
         fileUrl: `/upload/${uniqueFileName}`,
         fileType,
+        extractedText,
       },
     });
 
-    // If it's a text file, extract content directly
-    let extractedText: string | null = null;
-    if (fileType === 'txt') {
-      const textContent = new TextDecoder().decode(buffer);
-      extractedText = textContent;
-      await db.material.update({
-        where: { id: material.id },
-        data: { extractedText },
-      });
+    // Auto-chunk the text if we have it
+    let chunkCount = 0;
+    if (extractedText && extractedText.trim().length > 0) {
+      const CHUNK_SIZE = 500;
+      const OVERLAP = 50;
+      const text = extractedText.trim();
+      const chunks: { chunkText: string; chunkIndex: number }[] = [];
+
+      let startIndex = 0;
+      let chunkIndex = 0;
+
+      while (startIndex < text.length) {
+        const endIndex = Math.min(startIndex + CHUNK_SIZE, text.length);
+        const chunkText = text.slice(startIndex, endIndex).trim();
+
+        if (chunkText.length > 0) {
+          chunks.push({
+            chunkText,
+            chunkIndex,
+          });
+          chunkIndex++;
+        }
+
+        startIndex += CHUNK_SIZE - OVERLAP;
+        if (startIndex >= text.length) break;
+        if (CHUNK_SIZE - OVERLAP <= 0) break;
+      }
+
+      // Create chunks in database
+      if (chunks.length > 0) {
+        await db.materialChunk.createMany({
+          data: chunks.map((chunk) => ({
+            materialId: material.id,
+            chunkText: chunk.chunkText,
+            chunkIndex: chunk.chunkIndex,
+          })),
+        });
+        chunkCount = chunks.length;
+      }
     }
 
     return NextResponse.json(
@@ -82,6 +122,7 @@ export async function POST(request: NextRequest) {
           ...material,
           extractedText,
         },
+        chunkCount,
       },
       { status: 201 }
     );

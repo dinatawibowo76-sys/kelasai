@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { ArrowLeft, Upload, FileText, Loader2, Check, Type } from 'lucide-react';
+import { ArrowLeft, Upload, FileText, Loader2, Check, Type, AlertCircle } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import TeacherLayout from '@/components/shared/TeacherLayout';
 import { Button } from '@/components/ui/button';
@@ -17,8 +17,7 @@ export default function UploadMaterialPage() {
   const [textContent, setTextContent] = useState('');
   const [loading, setLoading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
-  const [processing, setProcessing] = useState(false);
-  const [materialId, setMaterialId] = useState<string | null>(null);
+  const [chunkCount, setChunkCount] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -51,88 +50,54 @@ export default function UploadMaterialPage() {
 
     setLoading(true);
     try {
-      let matId: string | null = null;
+      // Step 1: Create the file to upload
+      let fileToUpload: File;
+      const textToProcess = textContent.trim();
 
-      // Upload file if selected
       if (file) {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('sessionId', selectedSessionId);
-        formData.append('teacherId', teacher.id);
-
-        const res = await fetch('/api/materials', {
-          method: 'POST',
-          body: formData,
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Gagal mengunggah materi');
-
-        matId = data.material.id;
-
-        // For text files, auto-process
-        if (file.name.endsWith('.txt') && data.material.extractedText) {
-          // Already extracted
-          setMaterialId(matId);
-          setUploadSuccess(true);
-          toast.success('Materi berhasil diunggah dan diproses!');
-          setLoading(false);
-          return;
-        }
+        fileToUpload = file;
+      } else {
+        // No file, create a text file from the text content
+        const blob = new Blob([textToProcess], { type: 'text/plain' });
+        fileToUpload = new File([blob], 'materi-manual.txt', { type: 'text/plain' });
       }
 
-      // Process the material text
-      const textToProcess = textContent.trim();
+      // Step 2: Upload with text included for processing
+      const formData = new FormData();
+      formData.append('file', fileToUpload);
+      formData.append('sessionId', selectedSessionId);
+      formData.append('teacherId', teacher.id);
+      // Send text content so backend can process it regardless of file type
       if (textToProcess) {
-        setProcessing(true);
-        // If we uploaded a file, process it with the typed text
-        // If no file, create a virtual material entry by using the text
-        if (!matId) {
-          // No file uploaded, just use the text - we need a materialId
-          // Create a simple text file
-          const blob = new Blob([textToProcess], { type: 'text/plain' });
-          const virtualFile = new File([blob], 'materi-manual.txt', { type: 'text/plain' });
-          const formData = new FormData();
-          formData.append('file', virtualFile);
-          formData.append('sessionId', selectedSessionId);
-          formData.append('teacherId', teacher.id);
+        formData.append('text', textToProcess);
+      }
 
-          const res = await fetch('/api/materials', {
-            method: 'POST',
-            body: formData,
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Gagal mengunggah materi');
-          matId = data.material.id;
-        }
+      const res = await fetch('/api/materials', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Gagal mengunggah materi');
 
-        // Process material
-        const processRes = await fetch('/api/materials/process', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ materialId: matId, text: textToProcess }),
-        });
-        const processData = await processRes.json();
-        if (!processRes.ok) throw new Error(processData.error || 'Gagal memproses materi');
+      const chunks = data.chunkCount || 0;
+      setChunkCount(chunks);
+      setUploadSuccess(true);
 
-        setMaterialId(matId);
-        setUploadSuccess(true);
-        toast.success(`Materi berhasil diproses! ${processData.chunkCount} bagian terbentuk.`);
-      } else if (matId) {
-        // File uploaded but no text - need to process the file
-        setProcessing(true);
-        // For non-text files, we can't extract text client-side easily
-        // Just mark as uploaded, teacher can add text later
-        setMaterialId(matId);
-        setUploadSuccess(true);
-        toast.success('Materi berhasil diunggah! Tambahkan teks materi untuk memproses.');
+      if (chunks > 0) {
+        toast.success(`Materi berhasil diunggah & diproses! ${chunks} bagian terbentuk.`);
+      } else if (textToProcess) {
+        toast.success('Materi berhasil diunggah!');
+      } else {
+        toast.success('File berhasil diunggah! Tambahkan teks materi agar bisa diproses oleh AI.');
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Gagal mengunggah materi');
     } finally {
       setLoading(false);
-      setProcessing(false);
     }
   };
+
+  const isNonTextFile = file && !['txt', 'md'].includes(file.name.split('.').pop()?.toLowerCase() || '');
 
   return (
     <TeacherLayout title="Upload Materi">
@@ -159,13 +124,30 @@ export default function UploadMaterialPage() {
                 <Check className="w-8 h-8 text-green-600" />
               </div>
               <h3 className="font-semibold text-gray-800 mb-1">Materi Berhasil Diunggah!</h3>
-              <p className="text-sm text-gray-500 mb-4">Materi sudah diproses dan siap digunakan siswa</p>
-              <Button
-                className="bg-blue-600 hover:bg-blue-700"
-                onClick={() => navigate('session-detail')}
-              >
-                Kembali ke Sesi
-              </Button>
+              {chunkCount > 0 ? (
+                <p className="text-sm text-gray-500 mb-4">
+                  Materi sudah diproses menjadi {chunkCount} bagian dan siap digunakan untuk AI Chat & Quiz
+                </p>
+              ) : (
+                <p className="text-sm text-amber-600 mb-4">
+                  File terupload tapi belum ada teks yang diproses. AI Chat & Quiz membutuhkan teks materi.
+                </p>
+              )}
+              <div className="flex gap-2 justify-center">
+                <Button
+                  variant="outline"
+                  className="border-gray-200"
+                  onClick={() => { setUploadSuccess(false); setTextContent(''); setFile(null); }}
+                >
+                  Upload Lagi
+                </Button>
+                <Button
+                  className="bg-blue-600 hover:bg-blue-700"
+                  onClick={() => navigate('session-detail')}
+                >
+                  Kembali ke Sesi
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="space-y-4">
@@ -205,15 +187,26 @@ export default function UploadMaterialPage() {
                   <>
                     <Upload className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                     <p className="text-sm text-gray-500">Seret file ke sini atau klik untuk memilih</p>
-                    <p className="text-xs text-gray-400 mt-1">PDF, DOCX, PPTX, TXT</p>
+                    <p className="text-xs text-gray-400 mt-1">PDF, DOCX, PPTX, TXT, MD</p>
                   </>
                 )}
               </div>
 
+              {/* Info for non-text files */}
+              {isNonTextFile && (
+                <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                  <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-700">
+                    File {file.name.split('.').pop()?.toUpperCase()} tidak bisa dibaca otomatis. 
+                    Silakan <strong>salin/tempel teks materi</strong> di kolom bawah agar AI bisa memproses.
+                  </p>
+                </div>
+              )}
+
               {/* Divider */}
               <div className="flex items-center gap-3">
                 <div className="flex-1 h-px bg-gray-200" />
-                <span className="text-xs text-gray-400">atau ketik langsung</span>
+                <span className="text-xs text-gray-400 font-medium">atau ketik/tempel teks materi</span>
                 <div className="flex-1 h-px bg-gray-200" />
               </div>
 
@@ -222,17 +215,23 @@ export default function UploadMaterialPage() {
                 <Label className="flex items-center gap-1">
                   <Type className="w-4 h-4" />
                   Teks Materi
+                  <span className="text-xs text-red-500 font-normal">*wajib untuk AI Chat & Quiz</span>
                 </Label>
                 <Textarea
-                  placeholder="Ketik atau tempelkan teks materi di sini... Ini akan diproses oleh AI untuk chat dan quiz."
+                  placeholder="Ketik atau tempelkan teks materi di sini... Ini akan diproses oleh AI untuk chat dan quiz. Contoh: Persamaan kuadrat adalah persamaan polinomial berderajat dua..."
                   value={textContent}
                   onChange={(e) => setTextContent(e.target.value)}
                   rows={8}
                   className="resize-none"
                 />
-                <p className="text-xs text-gray-400">
-                  Teks ini akan dibagi menjadi bagian-bagian kecil untuk AI memahami materi
-                </p>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-gray-400">
+                    Teks akan dibagi menjadi bagian-bagian kecil untuk AI
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {textContent.length > 0 ? `${textContent.length} karakter` : ''}
+                  </p>
+                </div>
               </div>
 
               {/* Upload Button */}
@@ -241,10 +240,10 @@ export default function UploadMaterialPage() {
                 onClick={handleUpload}
                 disabled={loading || (!file && !textContent.trim())}
               >
-                {loading || processing ? (
+                {loading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    {processing ? 'Memproses...' : 'Mengunggah...'}
+                    Mengunggah & Memproses...
                   </>
                 ) : (
                   <>

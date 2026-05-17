@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import ZAI from 'z-ai-web-dev-sdk';
+import { callAI } from '@/lib/ai';
 
-const SYSTEM_PROMPT = `Kamu adalah AI Tutor yang membantu siswa belajar. 
+const SYSTEM_PROMPT = `Kamu adalah AI Tutor yang membantu siswa belajar.
 Panduan:
 - Jawab HANYA berdasarkan materi yang diberikan guru
 - Jangan membuat jawaban di luar materi
@@ -112,16 +112,8 @@ export async function POST(request: NextRequest) {
     // Build the user message with context
     const userMessage = `Konteks Materi:\n${context}\n\nJenjang Pendidikan: ${educationLevel}\n\nPertanyaan Siswa: ${message}`;
 
-    // Use z-ai-web-dev-sdk to generate response
-    const zai = await ZAI.create();
-    const completion = await zai.chat.completions.create({
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userMessage },
-      ],
-    });
-
-    const reply = completion.choices[0]?.message?.content || 'Maaf, saya tidak dapat memproses pertanyaan Anda saat ini.';
+    // Use Google Gemini AI
+    const reply = await callAI(SYSTEM_PROMPT, userMessage);
 
     // Save AI response
     const aiMessage = await db.chatMessage.create({
@@ -144,8 +136,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error in chat:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Gagal memproses pesan';
     return NextResponse.json(
-      { error: 'Gagal memproses pesan' },
+      { error: errorMessage },
       { status: 500 }
     );
   }

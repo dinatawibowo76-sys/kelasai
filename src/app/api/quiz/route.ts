@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import ZAI from 'z-ai-web-dev-sdk';
+import { callAI } from '@/lib/ai';
 
 export async function POST(request: NextRequest) {
   try {
@@ -103,19 +103,11 @@ Tipe soal: ${qType}
 
 PENTING: Hanya berikan JSON array, tanpa markdown code block atau teks lain.`;
 
-    // Use z-ai-web-dev-sdk to generate quiz
-    const zai = await ZAI.create();
-    const completion = await zai.chat.completions.create({
-      messages: [
-        {
-          role: 'system',
-          content: 'Kamu adalah pembuat soal quiz yang ahli. Buat soal berdasarkan materi yang diberikan. Hanya berikan output dalam format JSON array.',
-        },
-        { role: 'user', content: quizPrompt },
-      ],
-    });
-
-    const aiResponse = completion.choices[0]?.message?.content || '[]';
+    // Use Google Gemini AI
+    const aiResponse = await callAI(
+      'Kamu adalah pembuat soal quiz yang ahli. Buat soal berdasarkan materi yang diberikan. Hanya berikan output dalam format JSON array. Jangan gunakan markdown code block.',
+      quizPrompt
+    );
 
     // Parse AI response - handle potential markdown code blocks
     let questions: Array<{
@@ -133,11 +125,16 @@ PENTING: Hanya berikan JSON array, tanpa markdown code block atau teks lain.`;
       if (jsonStr.startsWith('```')) {
         jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
       }
+      // Try to find JSON array in the response
+      const arrayMatch = jsonStr.match(/\[[\s\S]*\]/);
+      if (arrayMatch) {
+        jsonStr = arrayMatch[0];
+      }
       questions = JSON.parse(jsonStr);
     } catch {
       console.error('Failed to parse quiz AI response:', aiResponse);
       return NextResponse.json(
-        { error: 'Gagal membuat soal quiz. AI tidak mengembalikan format yang valid.' },
+        { error: 'Gagal membuat soal quiz. AI tidak mengembalikan format yang valid. Silakan coba lagi.' },
         { status: 500 }
       );
     }
@@ -187,8 +184,9 @@ PENTING: Hanya berikan JSON array, tanpa markdown code block atau teks lain.`;
     );
   } catch (error) {
     console.error('Error generating quiz:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Gagal membuat quiz';
     return NextResponse.json(
-      { error: 'Gagal membuat quiz' },
+      { error: errorMessage },
       { status: 500 }
     );
   }

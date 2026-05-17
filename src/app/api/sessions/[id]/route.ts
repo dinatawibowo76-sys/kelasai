@@ -24,6 +24,7 @@ export async function GET(
             id: true,
             fileName: true,
             fileType: true,
+            extractedText: true,
             createdAt: true,
           },
         },

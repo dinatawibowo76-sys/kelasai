@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { FileText, MessageSquare, Brain, Send, Loader2, BookOpen, Lightbulb, PenTool, ListChecks } from 'lucide-react';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { FileText, MessageSquare, Brain, Send, Loader2, BookOpen, Lightbulb, PenTool, ListChecks, Sparkles, RefreshCw } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import StudentLayout from '@/components/shared/StudentLayout';
 import { Button } from '@/components/ui/button';
@@ -56,25 +56,39 @@ export default function StudentLearnPage() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('chat');
+  const [summary, setSummary] = useState<string | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  const fetchSession = useCallback(async (showRefresh = false) => {
     if (!studentSession) return;
-    const fetchSession = async () => {
-      try {
-        const res = await fetch(`/api/sessions/${studentSession.sessionId}`);
-        const data = await res.json();
-        if (data.session) {
-          setSession(data.session);
-        }
-      } catch {
-        // silently fail
-      } finally {
-        setLoading(false);
+    if (showRefresh) setRefreshing(true);
+    try {
+      const res = await fetch(`/api/sessions/${studentSession.sessionId}`);
+      const data = await res.json();
+      if (data.session) {
+        setSession(data.session);
       }
-    };
-    fetchSession();
+    } catch {
+      // silently fail
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, [studentSession]);
+
+  useEffect(() => {
+    fetchSession();
+  }, [fetchSession]);
+
+  // Auto-refresh every 15 seconds to check for new quizzes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchSession();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [fetchSession]);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -85,7 +99,6 @@ export default function StudentLearnPage() {
     const msg = message || chatInput.trim();
     if (!msg || !studentSession) return;
 
-    // Add student message to local state
     const studentMsg: ChatMessage = {
       id: `temp-${Date.now()}`,
       message: msg,
@@ -122,6 +135,28 @@ export default function StudentLearnPage() {
     }
   };
 
+  const handleGenerateSummary = async () => {
+    if (!session || summaryLoading) return;
+    setSummaryLoading(true);
+    try {
+      const res = await fetch('/api/summarize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: session.id,
+          educationLevel: session.class.educationLevel,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Gagal membuat ringkasan');
+      setSummary(data.summary);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Gagal membuat ringkasan');
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
   const quickActions = [
     { label: 'Jelaskan lebih gampang', icon: Lightbulb },
     { label: 'Berikan contoh', icon: BookOpen },
@@ -150,6 +185,9 @@ export default function StudentLearnPage() {
     );
   }
 
+  const hasMaterials = session?.materials && session.materials.length > 0 && session.materials.some(m => m.extractedText);
+  const hasQuizzes = session?.quizzes && session.quizzes.length > 0;
+
   return (
     <StudentLayout title={session?.title || 'Belajar'}>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -162,14 +200,54 @@ export default function StudentLearnPage() {
             <MessageSquare className="w-3.5 h-3.5 sm:mr-1" />
             <span className="hidden sm:inline">Chat AI</span>
           </TabsTrigger>
-          <TabsTrigger value="quiz" className="text-xs rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm">
+          <TabsTrigger value="quiz" className="text-xs rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm relative">
             <Brain className="w-3.5 h-3.5 sm:mr-1" />
             <span className="hidden sm:inline">Quiz</span>
+            {hasQuizzes && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full text-[10px] text-white flex items-center justify-center">
+                {session!.quizzes.length}
+              </span>
+            )}
           </TabsTrigger>
         </TabsList>
 
         {/* Materi Tab */}
         <TabsContent value="materi" className="mt-0">
+          {/* Ringkasan Materi Section */}
+          <Button
+            className="w-full h-11 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-semibold rounded-xl mb-4"
+            onClick={handleGenerateSummary}
+            disabled={summaryLoading || !hasMaterials}
+          >
+            {summaryLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                AI Sedang Meringkas...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 mr-2" />
+                Ringkas Materi dengan AI
+              </>
+            )}
+          </Button>
+
+          {/* AI Summary Display */}
+          {summary && (
+            <Card className="border-purple-100 shadow-md mb-4 bg-gradient-to-br from-purple-50 to-white">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Sparkles className="w-5 h-5 text-purple-600" />
+                  <h3 className="font-bold text-purple-800">Ringkasan AI</h3>
+                </div>
+                <div className="prose prose-sm max-w-none">
+                  <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{summary}</div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Materials List */}
           {session?.materials && session.materials.length > 0 ? (
             <div className="space-y-3">
               {session.materials.map((material) => (
@@ -200,6 +278,7 @@ export default function StudentLearnPage() {
               <CardContent className="p-8 text-center">
                 <FileText className="w-10 h-10 text-blue-300 mx-auto mb-2" />
                 <p className="text-sm text-gray-500">Belum ada materi tersedia</p>
+                <p className="text-xs text-gray-400 mt-1">Guru belum mengupload materi</p>
               </CardContent>
             </Card>
           )}
@@ -292,12 +371,26 @@ export default function StudentLearnPage() {
 
         {/* Quiz Tab */}
         <TabsContent value="quiz" className="mt-0">
-          {session?.quizzes && session.quizzes.length > 0 ? (
+          {/* Refresh Button */}
+          <div className="flex justify-end mb-3">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs border-blue-200 text-blue-600 hover:bg-blue-50"
+              onClick={() => fetchSession(true)}
+              disabled={refreshing}
+            >
+              <RefreshCw className={`w-3 h-3 mr-1 ${refreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+
+          {hasQuizzes ? (
             <div className="space-y-3">
-              {session.quizzes.map((quiz) => {
+              {session!.quizzes.map((quiz) => {
                 const diff = getDifficultyBadge(quiz.difficulty);
                 return (
-                  <Card key={quiz.id} className="border-gray-100 shadow-sm">
+                  <Card key={quiz.id} className="border-gray-100 shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
@@ -333,6 +426,8 @@ export default function StudentLearnPage() {
               <CardContent className="p-8 text-center">
                 <Brain className="w-10 h-10 text-blue-300 mx-auto mb-2" />
                 <p className="text-sm text-gray-500">Belum ada quiz tersedia</p>
+                <p className="text-xs text-gray-400 mt-1">Guru belum membuat quiz untuk sesi ini</p>
+                <p className="text-xs text-gray-400 mt-2">Klik Refresh untuk mengecek quiz baru</p>
               </CardContent>
             </Card>
           )}

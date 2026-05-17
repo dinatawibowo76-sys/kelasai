@@ -10,6 +10,11 @@
   package = "@netlify/plugin-nextjs"
 
 # Increase function timeout for AI API calls (default is 10s, AI needs more)
+# Netlify Pro allows up to 26s, Free tier up to 10s
+# We set higher values but they may be capped by your plan
+[functions]
+  node_bundler = "esbuild"
+
 [functions."api-chat"]
   maxDuration = 30
 
@@ -18,3 +23,9 @@
 
 [functions."api-summarize"]
   maxDuration = 60
+
+[functions."api-sessions"]
+  maxDuration = 15
+
+[functions."api-materials"]
+  maxDuration = 30

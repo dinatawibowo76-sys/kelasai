@@ -7,6 +7,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    console.log(`[Session API] Fetching session id=${id}`);
 
     const session = await db.learningSession.findUnique({
       where: { id },

@@ -163,12 +163,30 @@ export default function StudentLearnPage() {
 
   const handleStartQuiz = async (quizId: string) => {
     // Verify the quiz exists before navigating
+    // Use query param ?id=xxx for better Netlify compatibility
     try {
-      const res = await fetch(`/api/quiz/${quizId}?role=student`);
+      const res = await fetch(`/api/quiz?id=${quizId}&role=student`);
       const data = await res.json();
       if (!res.ok || !data.quiz) {
+        console.error('Quiz fetch failed:', res.status, data);
+        // Try fallback with dynamic route
+        try {
+          const fallbackRes = await fetch(`/api/quiz/${quizId}?role=student`);
+          const fallbackData = await fallbackRes.json();
+          if (fallbackRes.ok && fallbackData.quiz) {
+            if (!fallbackData.quiz.questions || fallbackData.quiz.questions.length === 0) {
+              toast.error('Quiz ini belum punya soal. Hubungi guru Anda.');
+              return;
+            }
+            setSelectedQuizId(quizId);
+            navigate('student-quiz');
+            return;
+          }
+        } catch {
+          // Fallback also failed
+        }
         toast.error('Quiz tidak ditemukan. Coba refresh halaman.');
-        fetchSession(true); // Refresh session data
+        fetchSession(true);
         return;
       }
       if (!data.quiz.questions || data.quiz.questions.length === 0) {
@@ -177,7 +195,8 @@ export default function StudentLearnPage() {
       }
       setSelectedQuizId(quizId);
       navigate('student-quiz');
-    } catch {
+    } catch (error) {
+      console.error('handleStartQuiz error:', error);
       toast.error('Gagal memuat quiz. Coba lagi.');
     }
   };

@@ -82,9 +82,30 @@ export default function StudentQuizResultPage() {
     let cancelled = false;
     const fetchQuestions = async () => {
       try {
-        const res = await fetch(`/api/quiz/${selectedQuizId}?role=teacher`);
-        const data = await res.json();
-        if (!cancelled && data.quiz?.questions) {
+        // Use query param ?id=xxx for better Netlify compatibility
+        let data: any = null;
+        let success = false;
+
+        try {
+          const res = await fetch(`/api/quiz?id=${selectedQuizId}&role=teacher`);
+          data = await res.json();
+          if (res.ok && data.quiz?.questions) success = true;
+        } catch {
+          // Query param approach failed
+        }
+
+        // Fallback to dynamic route
+        if (!success) {
+          try {
+            const res = await fetch(`/api/quiz/${selectedQuizId}?role=teacher`);
+            data = await res.json();
+            if (res.ok && data.quiz?.questions) success = true;
+          } catch {
+            // Dynamic route also failed
+          }
+        }
+
+        if (!cancelled && success && data.quiz?.questions) {
           setQuestions(data.quiz.questions);
         }
       } catch {

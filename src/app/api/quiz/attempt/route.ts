@@ -6,6 +6,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { studentSessionId, quizId, answers } = body;
 
+    console.log(`[Quiz Attempt] Submitting: quizId=${quizId}, studentSessionId=${studentSessionId}, answers=${answers?.length}`);
+
     if (!studentSessionId || !quizId || !answers || !Array.isArray(answers)) {
       return NextResponse.json(
         { error: 'Student session ID, quiz ID, dan jawaban diperlukan' },
@@ -19,6 +21,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!studentSession) {
+      console.log(`[Quiz Attempt] Student session not found: ${studentSessionId}`);
       return NextResponse.json(
         { error: 'Sesi siswa tidak ditemukan' },
         { status: 404 }
@@ -32,11 +35,14 @@ export async function POST(request: NextRequest) {
     });
 
     if (!quiz) {
+      console.log(`[Quiz Attempt] Quiz not found: ${quizId}`);
       return NextResponse.json(
         { error: 'Quiz tidak ditemukan' },
         { status: 404 }
       );
     }
+
+    console.log(`[Quiz Attempt] Found quiz: ${quiz.title}, ${quiz.questions.length} questions`);
 
     // Calculate score
     let totalPoints = 0;

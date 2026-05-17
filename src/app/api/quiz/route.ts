@@ -2,6 +2,82 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { callAI } from '@/lib/ai';
 
+// GET /api/quiz?id=xxx&role=student — Fetch quiz by ID
+// Using query params instead of dynamic route for better Netlify compatibility
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    const role = searchParams.get('role') || 'student';
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Quiz ID diperlukan. Gunakan ?id=xxx' },
+        { status: 400 }
+      );
+    }
+
+    console.log(`[Quiz API] Fetching quiz id=${id}, role=${role}`);
+
+    const quiz = await db.quiz.findUnique({
+      where: { id },
+      include: {
+        questions: {
+          orderBy: { id: 'asc' },
+        },
+        session: {
+          select: {
+            title: true,
+            class: {
+              select: {
+                className: true,
+                educationLevel: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!quiz) {
+      console.log(`[Quiz API] Quiz not found: id=${id}`);
+      return NextResponse.json(
+        { error: 'Quiz tidak ditemukan' },
+        { status: 404 }
+      );
+    }
+
+    console.log(`[Quiz API] Found quiz: ${quiz.title}, ${quiz.questions.length} questions`);
+
+    // If student, hide answer and explanation fields
+    if (role === 'student') {
+      const safeQuiz = {
+        ...quiz,
+        questions: quiz.questions.map((q) => ({
+          id: q.id,
+          question: q.question,
+          options: q.options,
+          questionType: q.questionType,
+          points: q.points,
+          // answer and explanation are omitted for students
+        })),
+      };
+      return NextResponse.json({ quiz: safeQuiz });
+    }
+
+    // Teacher can see everything
+    return NextResponse.json({ quiz });
+  } catch (error) {
+    console.error('[Quiz API] Error fetching quiz:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Gagal mengambil data quiz';
+    return NextResponse.json(
+      { error: errorMessage },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/quiz — Generate quiz with AI
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

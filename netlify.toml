@@ -1,34 +1,10 @@
 # ============================================
 # KelasAI - Netlify Configuration
 # ============================================
-#
-# IMPORTANT: Netlify requires a PostgreSQL database because:
-# 1. SQLite won't work (read-only filesystem)
-# 2. File uploads won't persist (extracted text stored in DB is what matters)
-#
-# Before deploying, you need:
-# - A PostgreSQL database (use Neon, Supabase, or Railway)
-# - Set environment variables in Netlify Dashboard > Site settings > Environment variables
-#
-# Recommended free PostgreSQL providers:
-# - Neon: https://neon.tech (free tier)
-# - Supabase: https://supabase.com (free tier)
-# - Railway: https://railway.app (free trial)
-# ============================================
 
 [build]
-  command = "prisma generate --schema=prisma/schema.prod.prisma && next build"
+  command = "npx prisma generate --schema=prisma/schema.prod.prisma && next build"
   publish = ".next"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
-
-[build.environment]
-  NETLIFY_NEXT_PLUGIN_SKIP = "false"
-
-# Redirect all requests to Next.js (handles SPA routing)
-[[redirects]]
-  from = "/*"
-  to = "/.netlify/functions/next/:splat"
-  status = 200
-  conditions = {Role = ["admin"]}

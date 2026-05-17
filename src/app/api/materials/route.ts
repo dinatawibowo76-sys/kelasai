@@ -6,14 +6,14 @@ import mammoth from 'mammoth';
 
 const UPLOAD_DIR = path.join(process.cwd(), 'upload');
 
-// Check if we're running on Vercel (read-only filesystem)
-const IS_VERCEL = !!process.env.VERCEL;
+// Check if we're running on a cloud platform (read-only filesystem)
+const IS_CLOUD = !!(process.env.VERCEL || process.env.NETLIFY);
 
 async function saveFileToDisk(uniqueFileName: string, buffer: Buffer): Promise<string | null> {
-  if (IS_VERCEL) {
-    // On Vercel, filesystem is read-only — skip file write
+  if (IS_CLOUD) {
+    // On cloud platforms (Vercel, Netlify), filesystem is read-only — skip file write
     // The extracted text stored in DB is what matters for AI features
-    console.log('Running on Vercel — skipping file write to read-only filesystem');
+    console.log('Running on cloud platform — skipping file write to read-only filesystem');
     return null;
   }
 

@@ -14,7 +14,10 @@
     "vercel:build": "prisma generate --schema=prisma/schema.prod.prisma && next build",
     "vercel:migrate": "prisma migrate dev --schema=prisma/schema.prod.prisma --name init",
     "vercel:migrate:deploy": "prisma migrate deploy --schema=prisma/schema.prod.prisma",
-    "vercel:deploy": "prisma migrate deploy --schema=prisma/schema.prod.prisma && vercel --prod"
+    "vercel:deploy": "prisma migrate deploy --schema=prisma/schema.prod.prisma && vercel --prod",
+    "netlify:build": "prisma generate --schema=prisma/schema.prod.prisma && next build",
+    "netlify:migrate": "prisma migrate dev --schema=prisma/schema.prod.prisma --name init",
+    "netlify:migrate:deploy": "prisma migrate deploy --schema=prisma/schema.prod.prisma"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -89,6 +92,7 @@
     "zustand": "^5.0.6"
   },
   "devDependencies": {
+    "@netlify/plugin-nextjs": "^5.15.11",
     "@tailwindcss/postcss": "^4",
     "@types/react": "^19",
     "@types/react-dom": "^19",

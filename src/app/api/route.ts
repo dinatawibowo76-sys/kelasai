@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 export async function GET() {
   // Health check endpoint - useful for debugging deployment issues
   const hasDbUrl = !!process.env.DATABASE_URL;
-  const hasGeminiKey = !!process.env.GEMINI_API_KEY;
+  const hasOpenRouterKey = !!process.env.OPENROUTER_API_KEY;
   const hasNextauthSecret = !!process.env.NEXTAUTH_SECRET;
 
   return NextResponse.json({
@@ -11,13 +11,13 @@ export async function GET() {
     service: "KelasAI",
     env: {
       DATABASE_URL: hasDbUrl ? "SET" : "MISSING",
-      GEMINI_API_KEY: hasGeminiKey ? "SET" : "MISSING",
+      OPENROUTER_API_KEY: hasOpenRouterKey ? "SET" : "MISSING",
       NEXTAUTH_SECRET: hasNextauthSecret ? "SET" : "MISSING",
     },
-    ready: hasDbUrl && hasGeminiKey && hasNextauthSecret,
+    ready: hasDbUrl && hasOpenRouterKey && hasNextauthSecret,
     missing: [
       !hasDbUrl && "DATABASE_URL",
-      !hasGeminiKey && "GEMINI_API_KEY",
+      !hasOpenRouterKey && "OPENROUTER_API_KEY",
       !hasNextauthSecret && "NEXTAUTH_SECRET",
     ].filter(Boolean),
   });

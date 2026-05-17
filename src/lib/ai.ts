@@ -1,114 +1,114 @@
 // ============================================
-// KelasAI - AI Provider (Google Gemini)
+// KelasAI - AI Provider (OpenRouter)
 // Works on any hosting platform (Netlify, Vercel, VPS)
+// Uses OpenRouter API with free Llama 3.3 70B model
 // ============================================
 
-interface GeminiMessage {
-  role: 'user' | 'model';
-  parts: Array<{ text: string }>;
+interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
 }
 
-// Model + API version combinations to try in order
+// Free models on OpenRouter - try in order
 const MODEL_CONFIGS = [
-  { model: 'gemini-2.0-flash', version: 'v1beta' },
-  { model: 'gemini-2.0-flash', version: 'v1' },
-  { model: 'gemini-1.5-flash', version: 'v1beta' },
-  { model: 'gemini-1.5-flash', version: 'v1' },
-  { model: 'gemini-1.5-flash-latest', version: 'v1beta' },
-  { model: 'gemini-pro', version: 'v1beta' },
-  { model: 'gemini-pro', version: 'v1' },
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'deepseek/deepseek-v4-flash:free',
+  'nvidia/nemotron-nano-9b-v2:free',
+  'meta-llama/llama-3.2-3b-instruct:free',
 ];
 
 export async function callAI(
   systemPrompt: string,
   userMessage: string
 ): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY;
 
   if (!apiKey) {
-    console.error('GEMINI_API_KEY is not set in environment variables');
-    throw new Error('GEMINI_API_KEY belum diset. Tambahkan di Environment Variables Netlify: Site settings > Environment variables > Add GEMINI_API_KEY');
+    console.error('OPENROUTER_API_KEY is not set in environment variables');
+    throw new Error('OPENROUTER_API_KEY belum diset. Tambahkan di Environment Variables Netlify: Site settings > Environment variables > Add OPENROUTER_API_KEY');
   }
 
-  const contents: GeminiMessage[] = [
+  const messages: ChatMessage[] = [
+    {
+      role: 'system',
+      content: systemPrompt,
+    },
     {
       role: 'user',
-      parts: [{ text: `System Instructions: ${systemPrompt}\n\n${userMessage}` }],
+      content: userMessage,
     },
   ];
 
-  // Try each model + version combo in order
+  // Try each model in order
   let lastError: Error | null = null;
 
-  for (const config of MODEL_CONFIGS) {
+  for (const model of MODEL_CONFIGS) {
     try {
-      const url = `https://generativelanguage.googleapis.com/${config.version}/models/${config.model}:generateContent?key=${apiKey}`;
-      console.log(`Trying Gemini: ${config.model} (${config.version})`);
+      console.log(`Trying OpenRouter model: ${model}`);
 
-      const response = await fetch(url, {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://dinatatechkelasai.netlify.app',
+          'X-Title': 'KelasAI',
+        },
         body: JSON.stringify({
-          contents,
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 4096,
-          },
+          model,
+          messages,
+          temperature: 0.7,
+          max_tokens: 4096,
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.text();
-        console.error(`Gemini API error (${config.model}/${config.version}):`, response.status, errorData);
+        console.error(`OpenRouter API error with model ${model}:`, response.status, errorData);
 
-        // If it's a 404 (model not found), try the next combo
-        if (response.status === 404) {
-          console.log(`Model ${config.model} (${config.version}) not found, trying next...`);
-          lastError = new Error(`AI API error (${config.model}): ${response.status} - ${errorData.substring(0, 200)}`);
-          continue;
+        // Parse error to check for rate limit
+        try {
+          const parsed = JSON.parse(errorData);
+          if (parsed.error?.code === 429) {
+            console.log(`Model ${model} rate-limited, trying next...`);
+            lastError = new Error(`Model ${model} rate-limited. Coba lagi dalam beberapa detik.`);
+            continue;
+          }
+          if (parsed.error?.code === 404) {
+            console.log(`Model ${model} not found, trying next...`);
+            lastError = new Error(`Model ${model} tidak tersedia.`);
+            continue;
+          }
+        } catch {
+          // Not JSON error
         }
 
-        // If it's auth error, don't retry
-        if (response.status === 400 || response.status === 401 || response.status === 403) {
-          throw new Error(`API Key tidak valid atau tidak memiliki akses. Pastikan API Key Google Gemini sudah benar dan Generative Language API sudah diaktifkan di Google Cloud Console.`);
+        // Auth errors - don't retry
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('API Key OpenRouter tidak valid. Pastikan key sudah benar dan aktif.');
         }
 
-        // Rate limit or server error
-        lastError = new Error(`AI API error (${config.model}): ${response.status} - ${errorData.substring(0, 200)}`);
+        lastError = new Error(`AI API error (${model}): ${response.status}`);
         continue;
       }
 
       const data = await response.json();
-
-      // Check for blocked content
-      if (data.promptFeedback?.blockReason) {
-        console.error('Content blocked:', data.promptFeedback.blockReason);
-        throw new Error('Permintaan diblokir oleh filter keamanan AI. Coba pertanyaan yang berbeda.');
-      }
-
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      const text = data.choices?.[0]?.message?.content;
 
       if (!text) {
-        const finishReason = data.candidates?.[0]?.finishReason;
-        if (finishReason === 'SAFETY') {
-          throw new Error('Respons AI diblokir oleh filter keamanan. Coba pertanyaan yang berbeda.');
-        }
         console.error('Empty AI response:', JSON.stringify(data).substring(0, 500));
         lastError = new Error('AI tidak mengembalikan respons. Coba lagi.');
         continue;
       }
 
-      console.log(`Successfully used: ${config.model} (${config.version})`);
+      console.log(`Successfully used model: ${model}`);
       return text;
     } catch (error) {
-      if (error instanceof Error && (
-        error.message.includes('API Key tidak valid') ||
-        error.message.includes('diblokir oleh filter')
-      )) {
+      if (error instanceof Error && error.message.includes('API Key OpenRouter tidak valid')) {
         throw error;
       }
       lastError = error instanceof Error ? error : new Error(String(error));
-      console.error(`Error with ${config.model} (${config.version}):`, error);
+      console.error(`Error with model ${model}:`, error);
     }
   }
 

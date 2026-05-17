@@ -14,7 +14,7 @@ export async function GET(
       where: { id },
       include: {
         questions: {
-          orderBy: { createdAt: 'asc' },
+          orderBy: { id: 'asc' },
         },
         session: {
           select: {

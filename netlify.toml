@@ -8,3 +8,13 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+# Increase function timeout for AI API calls (default is 10s, AI needs more)
+[functions."api-chat"]
+  maxDuration = 30
+
+[functions."api-quiz"]
+  maxDuration = 60
+
+[functions."api-summarize"]
+  maxDuration = 60

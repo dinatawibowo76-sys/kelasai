@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { FileText, MessageSquare, Brain, Send, Loader2, BookOpen, Lightbulb, PenTool, ListChecks, Sparkles, RefreshCw } from 'lucide-react';
+import { FileText, MessageSquare, Brain, Send, Loader2, BookOpen, Lightbulb, PenTool, ListChecks, Sparkles, RefreshCw, AlertCircle } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import StudentLayout from '@/components/shared/StudentLayout';
 import { Button } from '@/components/ui/button';
@@ -58,6 +58,7 @@ export default function StudentLearnPage() {
   const [activeTab, setActiveTab] = useState('chat');
   const [summary, setSummary] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -138,6 +139,7 @@ export default function StudentLearnPage() {
   const handleGenerateSummary = async () => {
     if (!session || summaryLoading) return;
     setSummaryLoading(true);
+    setSummaryError(null);
     try {
       const res = await fetch('/api/summarize', {
         method: 'POST',
@@ -151,9 +153,32 @@ export default function StudentLearnPage() {
       if (!res.ok) throw new Error(data.error || 'Gagal membuat ringkasan');
       setSummary(data.summary);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Gagal membuat ringkasan');
+      const errMsg = error instanceof Error ? error.message : 'Gagal membuat ringkasan';
+      setSummaryError(errMsg);
+      toast.error(errMsg);
     } finally {
       setSummaryLoading(false);
+    }
+  };
+
+  const handleStartQuiz = async (quizId: string) => {
+    // Verify the quiz exists before navigating
+    try {
+      const res = await fetch(`/api/quiz/${quizId}?role=student`);
+      const data = await res.json();
+      if (!res.ok || !data.quiz) {
+        toast.error('Quiz tidak ditemukan. Coba refresh halaman.');
+        fetchSession(true); // Refresh session data
+        return;
+      }
+      if (!data.quiz.questions || data.quiz.questions.length === 0) {
+        toast.error('Quiz ini belum punya soal. Hubungi guru Anda.');
+        return;
+      }
+      setSelectedQuizId(quizId);
+      navigate('student-quiz');
+    } catch {
+      toast.error('Gagal memuat quiz. Coba lagi.');
     }
   };
 
@@ -232,6 +257,15 @@ export default function StudentLearnPage() {
             )}
           </Button>
 
+          {!hasMaterials && (
+            <Card className="border-amber-200 bg-amber-50/50 mb-4">
+              <CardContent className="p-3 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-amber-700">Tombol ringkasan hanya aktif jika guru sudah mengupload materi yang berisi teks.</p>
+              </CardContent>
+            </Card>
+          )}
+
           {/* AI Summary Display */}
           {summary && (
             <Card className="border-purple-100 shadow-md mb-4 bg-gradient-to-br from-purple-50 to-white">
@@ -242,6 +276,19 @@ export default function StudentLearnPage() {
                 </div>
                 <div className="prose prose-sm max-w-none">
                   <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{summary}</div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Summary Error */}
+          {summaryError && (
+            <Card className="border-red-200 bg-red-50/50 mb-4">
+              <CardContent className="p-3 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-xs text-red-700 font-medium">Ringkasan gagal: {summaryError}</p>
+                  <p className="text-xs text-red-500 mt-1">Coba lagi dalam beberapa saat.</p>
                 </div>
               </CardContent>
             </Card>
@@ -407,10 +454,7 @@ export default function StudentLearnPage() {
                         <Button
                           size="sm"
                           className="bg-blue-600 hover:bg-blue-700 text-white ml-2"
-                          onClick={() => {
-                            setSelectedQuizId(quiz.id);
-                            navigate('student-quiz');
-                          }}
+                          onClick={() => handleStartQuiz(quiz.id)}
                         >
                           <ListChecks className="w-3 h-3 mr-1" />
                           Kerjakan

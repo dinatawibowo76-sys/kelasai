@@ -8,11 +8,15 @@ interface GeminiMessage {
   parts: Array<{ text: string }>;
 }
 
-// Model fallback list - try each in order until one works
-const GEMINI_MODELS = [
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
-  'gemini-1.5-flash-8b',
+// Model + API version combinations to try in order
+const MODEL_CONFIGS = [
+  { model: 'gemini-2.0-flash', version: 'v1beta' },
+  { model: 'gemini-2.0-flash', version: 'v1' },
+  { model: 'gemini-1.5-flash', version: 'v1beta' },
+  { model: 'gemini-1.5-flash', version: 'v1' },
+  { model: 'gemini-1.5-flash-latest', version: 'v1beta' },
+  { model: 'gemini-pro', version: 'v1beta' },
+  { model: 'gemini-pro', version: 'v1' },
 ];
 
 export async function callAI(
@@ -33,45 +37,45 @@ export async function callAI(
     },
   ];
 
-  // Try each model in the fallback list
+  // Try each model + version combo in order
   let lastError: Error | null = null;
 
-  for (const model of GEMINI_MODELS) {
+  for (const config of MODEL_CONFIGS) {
     try {
-      console.log(`Trying Gemini model: ${model}`);
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents,
-            generationConfig: {
-              temperature: 0.7,
-              maxOutputTokens: 4096,
-            },
-          }),
-        }
-      );
+      const url = `https://generativelanguage.googleapis.com/${config.version}/models/${config.model}:generateContent?key=${apiKey}`;
+      console.log(`Trying Gemini: ${config.model} (${config.version})`);
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents,
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 4096,
+          },
+        }),
+      });
 
       if (!response.ok) {
         const errorData = await response.text();
-        console.error(`Gemini API error with model ${model}:`, response.status, errorData);
-        lastError = new Error(`AI API error (${model}): ${response.status} - ${errorData.substring(0, 200)}`);
+        console.error(`Gemini API error (${config.model}/${config.version}):`, response.status, errorData);
 
-        // If it's a 404 (model not found), try the next model
+        // If it's a 404 (model not found), try the next combo
         if (response.status === 404) {
-          console.log(`Model ${model} not found, trying next...`);
+          console.log(`Model ${config.model} (${config.version}) not found, trying next...`);
+          lastError = new Error(`AI API error (${config.model}): ${response.status} - ${errorData.substring(0, 200)}`);
           continue;
         }
 
-        // If it's a 400 (bad request, e.g., API key invalid), don't retry
+        // If it's auth error, don't retry
         if (response.status === 400 || response.status === 401 || response.status === 403) {
           throw new Error(`API Key tidak valid atau tidak memiliki akses. Pastikan API Key Google Gemini sudah benar dan Generative Language API sudah diaktifkan di Google Cloud Console.`);
         }
 
-        // For other errors (429 rate limit, 500 server), also throw
-        throw lastError;
+        // Rate limit or server error
+        lastError = new Error(`AI API error (${config.model}): ${response.status} - ${errorData.substring(0, 200)}`);
+        continue;
       }
 
       const data = await response.json();
@@ -85,26 +89,26 @@ export async function callAI(
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
       if (!text) {
-        // Check if the candidate was blocked
         const finishReason = data.candidates?.[0]?.finishReason;
         if (finishReason === 'SAFETY') {
           throw new Error('Respons AI diblokir oleh filter keamanan. Coba pertanyaan yang berbeda.');
         }
-        console.error('Empty AI response. Full response:', JSON.stringify(data).substring(0, 500));
-        throw new Error('AI tidak mengembalikan respons. Coba lagi.');
+        console.error('Empty AI response:', JSON.stringify(data).substring(0, 500));
+        lastError = new Error('AI tidak mengembalikan respons. Coba lagi.');
+        continue;
       }
 
-      console.log(`Successfully used model: ${model}`);
+      console.log(`Successfully used: ${config.model} (${config.version})`);
       return text;
     } catch (error) {
       if (error instanceof Error && (
         error.message.includes('API Key tidak valid') ||
         error.message.includes('diblokir oleh filter')
       )) {
-        throw error; // Don't retry these errors
+        throw error;
       }
       lastError = error instanceof Error ? error : new Error(String(error));
-      console.error(`Error with model ${model}:`, error);
+      console.error(`Error with ${config.model} (${config.version}):`, error);
     }
   }
 
